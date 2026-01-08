@@ -14,6 +14,19 @@ function formatMMSS(totalSeconds){
 }
 function clamp(n,min,max){ return Math.max(min, Math.min(max,n)); }
 
+function shuffle(arr){
+  const a = [...arr];
+  for(let i=a.length-1; i>0; i--){
+    const j = Math.floor(Math.random()*(i+1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function pickN(arr, n){
+  return shuffle(arr).slice(0, Math.min(n, arr.length));
+}
+
 const STORAGE_KEY = "mnemosynth_save_v1";
 function loadSave(){
   try{
@@ -199,13 +212,25 @@ function renderNode(nodeId){
    Quiz system
 ----------------------------- */
 function beginQuiz(kind){
-  const questions = QUESTION_SETS[kind];
+  // Pull from the bank
+  const pool = QUESTION_SETS[kind];
+
+  // Decide how many questions per quiz
+  // (You can tune these numbers anytime)
+  const counts = {
+    baseline: 7, // start-of-pomodoro
+    final: 12    // end-of-pomodoro
+  };
+
+  const picked = pickN(pool, counts[kind] ?? pool.length);
+
   state.quiz = {
     kind,
     idx: 0,
     selectedIndex: null,
-    answers: [], // {id, correct, concept}
-    startedAt: Date.now()
+    answers: [],      // {id, correct, concept}
+    startedAt: Date.now(),
+    questions: picked // <-- the sampled quiz list
   };
 
   if(kind === "baseline"){
@@ -219,10 +244,18 @@ function beginQuiz(kind){
   showQuiz();
   renderQuizQuestion();
 }
+
 function renderQuizQuestion(){
-  const q = QUESTION_SETS[state.quiz.kind][state.quiz.idx];
-  quizTitle.textContent = state.quiz.kind === "baseline" ? "BASELINE CALIBRATION" : "COGNITIVE AUDIT";
-  quizProgress.textContent = `${state.quiz.idx+1} / ${QUESTION_SETS[state.quiz.kind].length}`;
+  const q = state.quiz.questions[state.quiz.idx];
+
+  quizTitle.textContent =
+    state.quiz.kind === "baseline"
+      ? "BASELINE CALIBRATION"
+      : "COGNITIVE AUDIT";
+
+  quizProgress.textContent =
+    `${state.quiz.idx + 1} / ${state.quiz.questions.length}`;
+
   quizQuestion.textContent = q.prompt;
   hintText.textContent = q.hint ?? "No hint available.";
 
@@ -230,39 +263,52 @@ function renderQuizQuestion(){
   state.quiz.selectedIndex = null;
   quizNextBtn.disabled = true;
 
-  q.options.forEach((opt, i)=>{
-    const b = document.createElement("button");
-    b.className = "optionBtn";
-    b.textContent = opt;
-    b.addEventListener("click", ()=>{
-      beep(460,0.05,0.02);
+  q.options.forEach((opt, i) => {
+    const btn = document.createElement("button");
+    btn.className = "optionBtn";
+    btn.textContent = opt;
+
+    btn.addEventListener("click", () => {
       state.quiz.selectedIndex = i;
       quizNextBtn.disabled = false;
-      quizOptions.querySelectorAll(".optionBtn").forEach(x=>x.classList.remove("selected"));
-      b.classList.add("selected");
+
+      quizOptions
+        .querySelectorAll(".optionBtn")
+        .forEach(b => b.classList.remove("selected"));
+
+      btn.classList.add("selected");
     });
-    quizOptions.appendChild(b);
+
+    quizOptions.appendChild(btn);
   });
 
-  // back button only for final polish later; keep simple now
-  quizBackBtn.classList.add("hidden");
-  quizNextBtn.textContent = (state.quiz.idx === QUESTION_SETS[state.quiz.kind].length-1) ? "Submit" : "Confirm";
+  quizNextBtn.textContent =
+    state.quiz.idx === state.quiz.questions.length - 1
+      ? "Submit"
+      : "Confirm";
 }
+
 function submitCurrentAnswer(){
-  const q = QUESTION_SETS[state.quiz.kind][state.quiz.idx];
-  const correct = state.quiz.selectedIndex === q.answerIndex;
-  state.quiz.answers.push({ id:q.id, concept:q.concept, correct });
+  const q = state.quiz.questions[state.quiz.idx];
+
+  const correct =
+    state.quiz.selectedIndex === q.answerIndex;
+
+  state.quiz.answers.push({
+    id: q.id,
+    concept: q.concept,
+    correct
+  });
 
   if(correct){
     logLine(`✔ ${q.concept}: integrity confirmed.`, "logOk");
-    setStability(state.save.stability + (state.quiz.kind === "baseline" ? 2 : 3));
-    beep(720,0.08,0.03);
-  }else{
+    setStability(state.save.stability + 3);
+  } else {
     logLine(`✖ ${q.concept}: mismatch detected.`, "logWarn");
-    setStability(state.save.stability - (state.quiz.kind === "baseline" ? 3 : 5));
-    beep(180,0.10,0.035);
+    setStability(state.save.stability - 5);
   }
 }
+
 function finishQuiz(){
   const total = state.quiz.answers.length;
   const correct = state.quiz.answers.filter(a=>a.correct).length;
@@ -414,16 +460,21 @@ skipBtn.addEventListener("click", ()=>{
 
 quizNextBtn.addEventListener("click", ()=>{
   if(state.quiz?.selectedIndex == null) return;
+
   submitCurrentAnswer();
 
-  const last = state.quiz.idx === QUESTION_SETS[state.quiz.kind].length - 1;
+  const last =
+    state.quiz.idx === state.quiz.questions.length - 1;
+
   if(last){
     finishQuiz();
     return;
   }
+
   state.quiz.idx += 1;
   renderQuizQuestion();
 });
+
 
 $("#resultsContinueBtn").addEventListener("click", ()=>{
   beep(620,0.06,0.025);

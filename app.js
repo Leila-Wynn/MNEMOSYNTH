@@ -14,6 +14,74 @@ function formatMMSS(totalSeconds){
 }
 function clamp(n,min,max){ return Math.max(min, Math.min(max,n)); }
 
+function setBodyEffect(className, on){
+  document.body.classList.toggle(className, !!on);
+}
+
+function activateEffect(effectName, durationMs){
+  // Turn on
+  if(effectName === "fear"){
+    state.effects.fear = true;
+    setBodyEffect("fear", true);
+    if(state.effects.fearTimer) clearTimeout(state.effects.fearTimer);
+    state.effects.fearTimer = setTimeout(() => {
+      state.effects.fear = false;
+      setBodyEffect("fear", false);
+    }, durationMs);
+  }
+
+  if(effectName === "memoryGlitch"){
+    state.effects.memoryGlitch = true;
+    setBodyEffect("memoryGlitch", true);
+    if(state.effects.glitchTimer) clearTimeout(state.effects.glitchTimer);
+    state.effects.glitchTimer = setTimeout(() => {
+      state.effects.memoryGlitch = false;
+      setBodyEffect("memoryGlitch", false);
+      // re-render story node cleanly after glitch ends
+      renderNode(state.save.nodeId);
+    }, durationMs);
+  }
+}
+
+// Light, readable “corruption” (keeps words mostly intact)
+function distortText(text, intensity = 0.08){
+  const chars = text.split("");
+  const glyphs = ["▯","▮","▒","░","≋","≈","∷","⋯","⟡","⟠"];
+  return chars.map(ch => {
+    if(ch === " " || ch === "\n") return ch;
+    if(Math.random() < intensity){
+      return glyphs[Math.floor(Math.random() * glyphs.length)];
+    }
+    return ch;
+  }).join("");
+}
+
+function applyConceptConsequence(concept, wasCorrect){
+  if(wasCorrect) return;
+
+  // Only trigger consequences during active study phases
+  // (baseline/final are fine; we want the atmosphere during the learning loop)
+  const durationFear = 16000;   // 16s threat spike
+  const durationGlitch = 14000; // 14s memory corruption
+
+  if(concept === "Amygdala"){
+    logLine("⚠ THREAT RESPONSE SPIKE: amygdala misfire detected.", "logWarn");
+    activateEffect("fear", durationFear);
+    // Optional: harsher audio cue
+    beep(140, 0.12, 0.05);
+    beep(220, 0.10, 0.04);
+  }
+
+  if(concept === "Hippocampus"){
+    logLine("⚠ MEMORY CORRUPTION: hippocampal index mismatch.", "logWarn");
+    activateEffect("memoryGlitch", durationGlitch);
+    // Optional: glitchy audio cue
+    beep(520, 0.04, 0.03);
+    beep(410, 0.04, 0.03);
+    beep(330, 0.05, 0.03);
+  }
+}
+
 function shuffle(arr){
   const a = [...arr];
   for(let i=a.length-1; i>0; i--){
@@ -77,7 +145,14 @@ const state = {
 
   // session phase
   phase: "IDLE", // IDLE | BASELINE | FOCUS | BREAK | FINAL | RESULTS
-  quiz: null
+  quiz: null,
+  effects: {
+  fear: false,
+  memoryGlitch: false,
+  fearTimer: null,
+  glitchTimer: null
+},
+
 };
 
 /* -----------------------------
@@ -181,8 +256,13 @@ function renderNode(nodeId){
   saveNow();
 
   const node = STORY.nodes[nodeId];
+  if(state.effects.memoryGlitch){
+  panelTitle.textContent = distortText(node.title, 0.12);
+  panelBody.textContent  = distortText(node.body, 0.07);
+} else {
   panelTitle.textContent = node.title;
   panelBody.textContent  = node.body;
+}
   chapterChip.textContent = STORY.zoneName;
 
   choicesEl.innerHTML = "";
@@ -307,6 +387,7 @@ function submitCurrentAnswer(){
     logLine(`✖ ${q.concept}: mismatch detected.`, "logWarn");
     setStability(state.save.stability - 5);
   }
+  applyConceptConsequence(q.concept, correct);
 }
 
 function finishQuiz(){

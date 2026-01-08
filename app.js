@@ -1,0 +1,494 @@
+import { STORY } from "./data/story.js";
+import { QUESTION_SETS } from "./data/questions.js";
+
+/* -----------------------------
+   Small utilities
+----------------------------- */
+const $ = (sel) => document.querySelector(sel);
+
+function pad2(n){ return String(n).padStart(2,"0"); }
+function formatMMSS(totalSeconds){
+  const m = Math.floor(totalSeconds/60);
+  const s = totalSeconds % 60;
+  return `${pad2(m)}:${pad2(s)}`;
+}
+function clamp(n,min,max){ return Math.max(min, Math.min(max,n)); }
+
+const STORAGE_KEY = "mnemosynth_save_v1";
+function loadSave(){
+  try{
+    return JSON.parse(localStorage.getItem(STORAGE_KEY)) ?? {
+      lastScore: null,
+      stability: 62,
+      nodeId: STORY.startNodeId,
+      soundOn: true,
+      history: []
+    };
+  }catch{
+    return { lastScore:null, stability:62, nodeId: STORY.startNodeId, soundOn:true, history:[] };
+  }
+}
+function saveNow(){
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state.save));
+}
+
+/* -----------------------------
+   Audio (simple WebAudio beeps)
+----------------------------- */
+let audioCtx = null;
+function beep(freq=440, dur=0.08, gain=0.03){
+  if(!state.save.soundOn) return;
+  audioCtx ??= new (window.AudioContext || window.webkitAudioContext)();
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.type = "sine";
+  o.frequency.value = freq;
+  g.gain.value = gain;
+  o.connect(g); g.connect(audioCtx.destination);
+  o.start();
+  o.stop(audioCtx.currentTime + dur);
+}
+
+/* -----------------------------
+   App state
+----------------------------- */
+const state = {
+  save: loadSave(),
+
+  // timer
+  mode: "focus", // focus | short | long
+  durations: { focus: 25*60, short: 5*60, long: 15*60 },
+  remaining: 25*60,
+  ticking: false,
+  timerId: null,
+
+  // session phase
+  phase: "IDLE", // IDLE | BASELINE | FOCUS | BREAK | FINAL | RESULTS
+  quiz: null
+};
+
+/* -----------------------------
+   DOM refs
+----------------------------- */
+const timeReadout = $("#timeReadout");
+const sessionStatePill = $("#sessionStatePill");
+const stabilityFill = $("#stabilityFill");
+const stabilityValue = $("#stabilityValue");
+
+const baselineTag = $("#baselineTag");
+const focusTag = $("#focusTag");
+const auditTag = $("#auditTag");
+const lastScoreValue = $("#lastScoreValue");
+
+const panelTitle = $("#panelTitle");
+const panelBody  = $("#panelBody");
+const choicesEl  = $("#choices");
+const chapterChip = $("#chapterChip");
+
+const quizCard = $("#quizCard");
+const quizTitle = $("#quizTitle");
+const quizProgress = $("#quizProgress");
+const quizQuestion = $("#quizQuestion");
+const quizOptions = $("#quizOptions");
+const quizNextBtn = $("#quizNextBtn");
+const quizBackBtn = $("#quizBackBtn");
+const hintText = $("#hintText");
+
+const resultsCard = $("#resultsCard");
+const resultsPercent = $("#resultsPercent");
+const resultsBig = $("#resultsBig");
+const resultsSmall = $("#resultsSmall");
+const breakdownEl = $("#breakdown");
+
+const terminal = $("#terminal");
+
+const startBtn = $("#startBtn");
+const pauseBtn = $("#pauseBtn");
+const skipBtn  = $("#skipBtn");
+const resetBtn = $("#resetBtn");
+const soundToggle = $("#soundToggle");
+
+/* -----------------------------
+   Rendering
+----------------------------- */
+function logLine(text, cls="logSys"){
+  const div = document.createElement("div");
+  div.className = `logLine ${cls}`;
+  div.textContent = text;
+  terminal.prepend(div);
+}
+function setStability(n){
+  state.save.stability = clamp(Math.round(n), 0, 100);
+  stabilityFill.style.width = `${state.save.stability}%`;
+  stabilityValue.textContent = `${state.save.stability}%`;
+  saveNow();
+}
+function setPhase(phase){
+  state.phase = phase;
+  sessionStatePill.textContent = phase;
+  baselineTag.textContent = (phase === "BASELINE") ? "ACTIVE" : (phase === "IDLE" ? "LOCKED" : "DONE");
+  focusTag.textContent    = (phase === "FOCUS") ? "ACTIVE" : (phase === "IDLE" ? "LOCKED" : (phase === "BASELINE" ? "LOCKED" : "READY"));
+  auditTag.textContent    = (phase === "FINAL") ? "ACTIVE" : (phase === "RESULTS" ? "DONE" : "LOCKED");
+}
+function setMode(mode){
+  state.mode = mode;
+  state.remaining = state.durations[mode];
+  timeReadout.textContent = formatMMSS(state.remaining);
+
+  document.querySelectorAll(".tab").forEach(btn=>{
+    const isActive = btn.dataset.mode === mode;
+    btn.classList.toggle("active", isActive);
+    btn.setAttribute("aria-selected", isActive ? "true" : "false");
+  });
+}
+function setLastScoreUI(){
+  lastScoreValue.textContent = state.save.lastScore == null ? "—" : `${state.save.lastScore}%`;
+}
+function showStory(){
+  quizCard.classList.add("hidden");
+  resultsCard.classList.add("hidden");
+  choicesEl.classList.remove("hidden");
+}
+function showQuiz(){
+  quizCard.classList.remove("hidden");
+  resultsCard.classList.add("hidden");
+  choicesEl.classList.add("hidden");
+}
+function showResults(){
+  resultsCard.classList.remove("hidden");
+  quizCard.classList.add("hidden");
+  choicesEl.classList.add("hidden");
+}
+
+/* -----------------------------
+   Story system
+----------------------------- */
+function renderNode(nodeId){
+  state.save.nodeId = nodeId;
+  saveNow();
+
+  const node = STORY.nodes[nodeId];
+  panelTitle.textContent = node.title;
+  panelBody.textContent  = node.body;
+  chapterChip.textContent = STORY.zoneName;
+
+  choicesEl.innerHTML = "";
+  (node.choices ?? []).forEach((c, idx)=>{
+    const btn = document.createElement("button");
+    btn.className = "choiceBtn";
+    btn.innerHTML = `
+      <div class="choiceTop">CHOICE ${idx+1}</div>
+      <div class="choiceMain">${c.label}</div>
+    `;
+    btn.addEventListener("click", ()=>{
+      beep(520,0.06,0.025);
+      if(c.action === "BEGIN_BASELINE_QUIZ"){
+        beginQuiz("baseline");
+        return;
+      }
+      if(c.to){
+        renderNode(c.to);
+        return;
+      }
+    });
+    choicesEl.appendChild(btn);
+  });
+}
+
+/* -----------------------------
+   Quiz system
+----------------------------- */
+function beginQuiz(kind){
+  const questions = QUESTION_SETS[kind];
+  state.quiz = {
+    kind,
+    idx: 0,
+    selectedIndex: null,
+    answers: [], // {id, correct, concept}
+    startedAt: Date.now()
+  };
+
+  if(kind === "baseline"){
+    setPhase("BASELINE");
+    logLine("BASELINE CALIBRATION: initiating diagnostic…", "logSys");
+  }else{
+    setPhase("FINAL");
+    logLine("COGNITIVE AUDIT: compiling recall integrity…", "logWarn");
+  }
+
+  showQuiz();
+  renderQuizQuestion();
+}
+function renderQuizQuestion(){
+  const q = QUESTION_SETS[state.quiz.kind][state.quiz.idx];
+  quizTitle.textContent = state.quiz.kind === "baseline" ? "BASELINE CALIBRATION" : "COGNITIVE AUDIT";
+  quizProgress.textContent = `${state.quiz.idx+1} / ${QUESTION_SETS[state.quiz.kind].length}`;
+  quizQuestion.textContent = q.prompt;
+  hintText.textContent = q.hint ?? "No hint available.";
+
+  quizOptions.innerHTML = "";
+  state.quiz.selectedIndex = null;
+  quizNextBtn.disabled = true;
+
+  q.options.forEach((opt, i)=>{
+    const b = document.createElement("button");
+    b.className = "optionBtn";
+    b.textContent = opt;
+    b.addEventListener("click", ()=>{
+      beep(460,0.05,0.02);
+      state.quiz.selectedIndex = i;
+      quizNextBtn.disabled = false;
+      quizOptions.querySelectorAll(".optionBtn").forEach(x=>x.classList.remove("selected"));
+      b.classList.add("selected");
+    });
+    quizOptions.appendChild(b);
+  });
+
+  // back button only for final polish later; keep simple now
+  quizBackBtn.classList.add("hidden");
+  quizNextBtn.textContent = (state.quiz.idx === QUESTION_SETS[state.quiz.kind].length-1) ? "Submit" : "Confirm";
+}
+function submitCurrentAnswer(){
+  const q = QUESTION_SETS[state.quiz.kind][state.quiz.idx];
+  const correct = state.quiz.selectedIndex === q.answerIndex;
+  state.quiz.answers.push({ id:q.id, concept:q.concept, correct });
+
+  if(correct){
+    logLine(`✔ ${q.concept}: integrity confirmed.`, "logOk");
+    setStability(state.save.stability + (state.quiz.kind === "baseline" ? 2 : 3));
+    beep(720,0.08,0.03);
+  }else{
+    logLine(`✖ ${q.concept}: mismatch detected.`, "logWarn");
+    setStability(state.save.stability - (state.quiz.kind === "baseline" ? 3 : 5));
+    beep(180,0.10,0.035);
+  }
+}
+function finishQuiz(){
+  const total = state.quiz.answers.length;
+  const correct = state.quiz.answers.filter(a=>a.correct).length;
+  const pct = total === 0 ? 0 : Math.round((correct/total)*100);
+
+  // concept breakdown
+  const byConcept = {};
+  for(const a of state.quiz.answers){
+    byConcept[a.concept] ??= { correct:0, total:0 };
+    byConcept[a.concept].total += 1;
+    if(a.correct) byConcept[a.concept].correct += 1;
+  }
+
+  // Save last score only for FINAL (or overall; your choice)
+  if(state.quiz.kind === "final"){
+    state.save.lastScore = pct;
+    state.save.history.unshift({
+      when: new Date().toISOString(),
+      score: pct,
+      stability: state.save.stability
+    });
+    state.save.history = state.save.history.slice(0, 20);
+    saveNow();
+    setLastScoreUI();
+  }
+
+  // Render results
+  resultsPercent.textContent = `${pct}%`;
+  resultsBig.textContent = `Archive Recall Integrity: ${pct}%`;
+  resultsSmall.textContent = state.quiz.kind === "baseline"
+    ? "Baseline recorded. The simulation will now respond to what you know."
+    : "Audit complete. Your score determines what stabilizes… and what mutates.";
+
+  breakdownEl.innerHTML = "";
+  Object.entries(byConcept).forEach(([k,v])=>{
+    const row = document.createElement("div");
+    row.className = "breakRow";
+    row.innerHTML = `
+      <div class="breakKey">${k.toUpperCase()}</div>
+      <div class="breakVal">${Math.round((v.correct/v.total)*100)}%</div>
+    `;
+    breakdownEl.appendChild(row);
+  });
+
+  setPhase("RESULTS");
+  showResults();
+}
+
+/* -----------------------------
+   Timer system
+----------------------------- */
+function tick(){
+  if(!state.ticking) return;
+
+  state.remaining -= 1;
+  if(state.remaining < 0) state.remaining = 0;
+  timeReadout.textContent = formatMMSS(state.remaining);
+
+  // last 10 seconds: subtle urgency beep
+  if(state.mode === "focus" && state.remaining <= 10 && state.remaining > 0){
+    beep(300 + (10 - state.remaining)*30, 0.04, 0.012);
+  }
+
+  if(state.remaining === 0){
+    stopTimer();
+    onTimerEnd();
+  }
+}
+function startTimer(){
+  if(state.ticking) return;
+  state.ticking = true;
+  pauseBtn.disabled = false;
+  skipBtn.disabled = false;
+  startBtn.disabled = true;
+
+  state.timerId = window.setInterval(tick, 1000);
+}
+function stopTimer(){
+  state.ticking = false;
+  if(state.timerId) window.clearInterval(state.timerId);
+  state.timerId = null;
+
+  pauseBtn.disabled = true;
+  skipBtn.disabled = true;
+  startBtn.disabled = false;
+}
+function onTimerEnd(){
+  logLine("TIMER: phase boundary reached.", "logSys");
+  beep(880,0.12,0.04);
+  beep(660,0.12,0.035);
+
+  if(state.mode === "focus"){
+    // focus ended -> final quiz
+    renderNode("hall");
+    beginQuiz("final");
+  }else{
+    // breaks end -> ready
+    setPhase("IDLE");
+    renderNode(state.save.nodeId);
+    showStory();
+    logLine("BREAK COMPLETE: returning to simulation.", "logOk");
+  }
+}
+
+/* -----------------------------
+   Session Start Logic
+----------------------------- */
+function startSession(){
+  // Always baseline quiz at pomodoro start (as requested)
+  setMode("focus");
+  beginQuiz("baseline");
+  startTimer();
+  setPhase("BASELINE");
+  baselineTag.textContent = "ACTIVE";
+  focusTag.textContent = "LOCKED";
+  auditTag.textContent = "LOCKED";
+}
+
+/* -----------------------------
+   Events
+----------------------------- */
+document.querySelectorAll(".tab").forEach(btn=>{
+  btn.addEventListener("click", ()=>{
+    if(state.ticking) return; // keep it simple: don’t change mode while running
+    setMode(btn.dataset.mode);
+    beep(540,0.05,0.02);
+  });
+});
+
+startBtn.addEventListener("click", ()=>{
+  beep(520,0.08,0.03);
+  startSession();
+});
+
+pauseBtn.addEventListener("click", ()=>{
+  if(!state.ticking) return;
+  stopTimer();
+  logLine("PAUSED: your attention has withdrawn.", "logFaint");
+  beep(220,0.08,0.02);
+});
+
+skipBtn.addEventListener("click", ()=>{
+  if(!state.ticking) return;
+  state.remaining = 0;
+  timeReadout.textContent = formatMMSS(state.remaining);
+  stopTimer();
+  onTimerEnd();
+});
+
+quizNextBtn.addEventListener("click", ()=>{
+  if(state.quiz?.selectedIndex == null) return;
+  submitCurrentAnswer();
+
+  const last = state.quiz.idx === QUESTION_SETS[state.quiz.kind].length - 1;
+  if(last){
+    finishQuiz();
+    return;
+  }
+  state.quiz.idx += 1;
+  renderQuizQuestion();
+});
+
+$("#resultsContinueBtn").addEventListener("click", ()=>{
+  beep(620,0.06,0.025);
+
+  // After baseline results -> unlock focus exploration
+  if(quizTitle.textContent.includes("BASELINE") || (state.quiz && state.quiz.kind === "baseline")){
+    setPhase("FOCUS");
+    focusTag.textContent = "ACTIVE";
+    baselineTag.textContent = "DONE";
+    auditTag.textContent = "LOCKED";
+    showStory();
+    renderNode("hall");
+    logLine("FOCUS: exploration authorized.", "logOk");
+    return;
+  }
+
+  // After final -> go idle (break next, if you want later)
+  setPhase("IDLE");
+  showStory();
+  renderNode(state.save.nodeId);
+  logLine("SESSION COMPLETE: archive state written.", "logOk");
+});
+
+$("#resultsHomeBtn").addEventListener("click", ()=>{
+  beep(420,0.06,0.02);
+  setPhase("IDLE");
+  showStory();
+  renderNode("boot");
+});
+
+resetBtn.addEventListener("click", ()=>{
+  const ok = confirm("Reset MNEMOSYNTH progress? This clears saved score & state.");
+  if(!ok) return;
+  localStorage.removeItem(STORAGE_KEY);
+  state.save = loadSave();
+  setLastScoreUI();
+  setStability(state.save.stability);
+  setPhase("IDLE");
+  setMode("focus");
+  renderNode("boot");
+  showStory();
+  terminal.innerHTML = "";
+  logLine("RESET: new subject instance created.", "logSys");
+});
+
+soundToggle.addEventListener("click", ()=>{
+  state.save.soundOn = !state.save.soundOn;
+  saveNow();
+  soundToggle.innerHTML = `<span class="icon">${state.save.soundOn ? "♪" : "×"}</span>`;
+  beep(700,0.06,0.02);
+});
+
+/* -----------------------------
+   Boot
+----------------------------- */
+function boot(){
+  soundToggle.innerHTML = `<span class="icon">${state.save.soundOn ? "♪" : "×"}</span>`;
+  setLastScoreUI();
+  setStability(state.save.stability);
+  setPhase("IDLE");
+  setMode("focus");
+  renderNode(state.save.nodeId);
+  showStory();
+
+  logLine("SYSTEM: MNEMOSYNTH boot sequence complete.", "logSys");
+  logLine("SYSTEM: Your attention will determine what exists.", "logFaint");
+}
+boot();

@@ -302,7 +302,19 @@ function beginQuiz(kind){
     final: 12    // end-of-pomodoro
   };
 
-  const picked = pickN(pool, counts[kind] ?? pool.length);
+  const targetCount = counts[kind] ?? pool.length;
+
+// Pull questions whose concept you previously missed
+const missed = pool.filter(q => state.missedConcepts.has(q.concept));
+const rest   = pool.filter(q => !state.missedConcepts.has(q.concept));
+
+// Always include up to 3 missed-concept questions first (spaced repetition)
+const picked = [
+  ...pickN(missed, Math.min(3, targetCount)),
+  ...pickN(rest, targetCount)
+].slice(0, targetCount);
+
+logLine(`FOCUS: prioritizing ${Math.min(3, missed.length)} missed concept(s).`, "logSys");
 
   state.quiz = {
     kind,
@@ -370,9 +382,7 @@ function renderQuizQuestion(){
 
 function submitCurrentAnswer(){
   const q = state.quiz.questions[state.quiz.idx];
-
-  const correct =
-    state.quiz.selectedIndex === q.answerIndex;
+  const correct = state.quiz.selectedIndex === q.answerIndex;
 
   state.quiz.answers.push({
     id: q.id,
@@ -381,13 +391,23 @@ function submitCurrentAnswer(){
   });
 
   if(correct){
+    // ✅ IF CORRECT → remove from missed list
+    state.missedConcepts.delete(q.concept);
+
     logLine(`✔ ${q.concept}: integrity confirmed.`, "logOk");
     setStability(state.save.stability + 3);
+    beep(720,0.08,0.03);
   } else {
+    // ❌ IF WRONG → add to missed list
+    state.missedConcepts.add(q.concept);
+
     logLine(`✖ ${q.concept}: mismatch detected.`, "logWarn");
     setStability(state.save.stability - 5);
+    beep(180,0.10,0.035);
   }
+
   applyConceptConsequence(q.concept, correct);
+  state.missedConcepts = new Set();
 }
 
 function finishQuiz(){

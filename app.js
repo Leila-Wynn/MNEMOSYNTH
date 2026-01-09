@@ -56,6 +56,17 @@ function distortText(text, intensity = 0.08){
   }).join("");
 }
 
+function microLessonFor(concept){
+  const lessons = {
+    "Amygdala":
+      "Amygdala = threat detection and fear processing. It assigns emotional significance and helps trigger fight-or-flight responses.",
+
+    "Hippocampus":
+      "Hippocampus = forming new long-term memories (especially episodic and spatial). Damage causes difficulty creating new memories."
+  };
+  return lessons[concept] ?? null;
+}
+
 function applyConceptConsequence(concept, wasCorrect){
   if(wasCorrect) return;
 
@@ -65,22 +76,27 @@ function applyConceptConsequence(concept, wasCorrect){
   const durationGlitch = 14000; // 14s memory corruption
 
   if(concept === "Amygdala"){
-    logLine("⚠ THREAT RESPONSE SPIKE: amygdala misfire detected.", "logWarn");
-    activateEffect("fear", durationFear);
-    // Optional: harsher audio cue
-    beep(140, 0.12, 0.05);
-    beep(220, 0.10, 0.04);
+  logLine("⚠ THREAT RESPONSE SPIKE: amygdala misfire detected.", "logWarn");
+
+  const lesson = microLessonFor(concept);
+  if(lesson) logLine(`↳ ${lesson}`, "logSys");
+
+  activateEffect("fear", durationFear);
+  // Optional: harsher audio cue
+  beep(140, 0.12, 0.05);
+  beep(220, 0.10, 0.04);
+}
   }
 
   if(concept === "Hippocampus"){
-    logLine("⚠ MEMORY CORRUPTION: hippocampal index mismatch.", "logWarn");
-    activateEffect("memoryGlitch", durationGlitch);
-    // Optional: glitchy audio cue
-    beep(520, 0.04, 0.03);
-    beep(410, 0.04, 0.03);
-    beep(330, 0.05, 0.03);
-  }
+  logLine("⚠ MEMORY CORRUPTION: hippocampal index mismatch.", "logWarn");
+
+  const lesson = microLessonFor(concept);
+  if(lesson) logLine(`↳ ${lesson}`, "logSys");
+
+  activateEffect("memoryGlitch", durationGlitch);
 }
+
 
 function shuffle(arr){
   const a = [...arr];

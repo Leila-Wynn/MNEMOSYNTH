@@ -408,24 +408,26 @@ function submitCurrentAnswer(){
   });
 
   if(correct){
-    // ✅ IF CORRECT → remove from missed list
-    state.missedConcepts.delete(q.concept);
+    // ✅ IF CORRECT → remove from missed list (array-safe)
+    state.missedConcepts = state.missedConcepts.filter(c => c !== q.concept);
 
     logLine(`✔ ${q.concept}: integrity confirmed.`, "logOk");
     setStability(state.save.stability + 3);
-    beep(720,0.08,0.03);
+    beep(720, 0.08, 0.03);
   } else {
-    // ❌ IF WRONG → add to missed list
-    state.missedConcepts.add(q.concept);
+    // ❌ IF WRONG → add to missed list if not already included (array-safe)
+    if(!state.missedConcepts.includes(q.concept)){
+      state.missedConcepts.push(q.concept);
+    }
 
     logLine(`✖ ${q.concept}: mismatch detected.`, "logWarn");
     setStability(state.save.stability - 5);
-    beep(180,0.10,0.035);
+    beep(180, 0.10, 0.035);
   }
 
   applyConceptConsequence(q.concept, correct);
-  state.missedConcepts = new Set();
 }
+
 
 function finishQuiz(){
   const total = state.quiz.answers.length;

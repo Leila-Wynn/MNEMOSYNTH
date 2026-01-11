@@ -1,4 +1,5 @@
-console.log("MNEMOSYNTH app.js LOADED ✅", new Date().toISOString());
+alert("MNEMOSYNTH app.js LOADED");
+
 
 
 import { STORY } from "./data/story.js";

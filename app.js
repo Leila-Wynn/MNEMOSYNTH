@@ -152,25 +152,19 @@ function beep(freq=440, dur=0.08, gain=0.03){
 ----------------------------- */
 const state = {
   save: loadSave(),
-
-  // timer
-  mode: "focus", // focus | short | long
-  durations: { focus: 25*60, short: 5*60, long: 15*60 },
-  remaining: 25*60,
-  ticking: false,
-  timerId: null,
-
-  // session phase
-  phase: "IDLE", // IDLE | BASELINE | FOCUS | BREAK | FINAL | RESULTS
   quiz: null,
-  effects: {
-  fear: false,
-  memoryGlitch: false,
-  fearTimer: null,
-  glitchTimer: null
-},
 
+  effects: {
+    fear: false,
+    memoryGlitch: false,
+    fearTimer: null,
+    glitchTimer: null
+  },
+
+  missedConcepts: []
 };
+
+
 
 /* -----------------------------
    DOM refs
@@ -322,8 +316,8 @@ function beginQuiz(kind){
   const targetCount = counts[kind] ?? pool.length;
 
 // Pull questions whose concept you previously missed
-const missed = pool.filter(q => state.missedConcepts.has(q.concept));
-const rest   = pool.filter(q => !state.missedConcepts.has(q.concept));
+const missed = pool.filter(q => state.missedConcepts.includes(q.concept));
+const rest   = pool.filter(q => !state.missedConcepts.includes(q.concept));
 
 // Always include up to 3 missed-concept questions first (spaced repetition)
 const picked = [

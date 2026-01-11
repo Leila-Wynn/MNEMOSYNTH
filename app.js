@@ -1,3 +1,6 @@
+console.log("MNEMOSYNTH app.js LOADED ✅", new Date().toISOString());
+
+
 import { STORY } from "./data/story.js";
 import { QUESTION_SETS } from "./data/questions.js";
 

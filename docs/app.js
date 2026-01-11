@@ -1,4 +1,4 @@
-
+alert("MNEMOSYNTH app.js LOADED");
 
 
 
@@ -661,20 +661,3 @@ function boot(){
   logLine("SYSTEM: Your attention will determine what exists.", "logFaint");
 }
 boot();
-
-// --- BOOT SAFETY: ensure we render the current story node on load ---
-document.addEventListener("DOMContentLoaded", () => {
-  try{
-    // Ensure a nodeId exists
-    if(!state.save) state.save = {};
-    if(!state.save.nodeId) state.save.nodeId = "start"; // change to your real start node id if different
-    renderNode(state.save.nodeId);
-  }catch(e){
-    // Fail loud in UI (no devtools needed)
-    const fallback = document.createElement("div");
-    fallback.style.cssText = "position:fixed;inset:0;background:#111;color:#fff;padding:20px;z-index:99999;overflow:auto;font-family:ui-monospace,Menlo,monospace;";
-    fallback.textContent = "BOOT ERROR: " + (e && e.message ? e.message : String(e));
-    document.body.appendChild(fallback);
-  }
-});
-

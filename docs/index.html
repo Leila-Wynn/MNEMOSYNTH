@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>MNEMOSYNTH</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+
+<body>
+  <div style="position:fixed;top:0;left:0;right:0;z-index:9999;
+background:#ff3b3b;color:white;padding:10px;font-weight:700;text-align:center;">
+DEPLOY TEST — IF YOU SEE THIS, YOU’RE ON THE RIGHT BUILD
+</div>
+
+  <!-- Background layers -->
+  <div class="bg">
+    <div class="starfield" aria-hidden="true"></div>
+    <div class="vignette" aria-hidden="true"></div>
+  </div>
+
+  <header class="topbar">
+    <div class="brand">
+      <div class="brandMark" aria-hidden="true"></div>
+      <div class="brandText">
+        <div class="brandTitle">MNEMOSYNTH</div>
+        <div class="brandSub">CORTEX PROTOCOL • SOLO STUDY SIMULATION</div>
+      </div>
+    </div>
+
+    <div class="topControls">
+      <button id="soundToggle" class="iconBtn" title="Sound">
+        <span class="icon">♪</span>
+      </button>
+      <button id="resetBtn" class="iconBtn" title="Reset progress">
+        <span class="icon">↺</span>
+      </button>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <!-- LEFT: Mission / Timer -->
+    <section class="leftCol">
+      <div class="card cardGlow">
+        <div class="cardHeader">
+          <div class="cardTitle">SESSION CONTROL</div>
+          <div class="pill" id="sessionStatePill">IDLE</div>
+        </div>
+
+        <div class="timerBox">
+          <div class="tabs" role="tablist" aria-label="Pomodoro modes">
+            <button class="tab active" data-mode="focus" role="tab" aria-selected="true">Pomodoro</button>
+            <button class="tab" data-mode="short" role="tab" aria-selected="false">Short Break</button>
+            <button class="tab" data-mode="long" role="tab" aria-selected="false">Long Break</button>
+          </div>
+
+          <div class="timeReadout" id="timeReadout">25:00</div>
+
+          <div class="timerBtns">
+            <button id="startBtn" class="btn primary">Start Session</button>
+            <button id="pauseBtn" class="btn ghost" disabled>Pause</button>
+            <button id="skipBtn" class="btn ghost" disabled>Skip</button>
+          </div>
+
+          <div class="tinyRow">
+            <div class="tinyLabel">Archive Stability</div>
+            <div class="meter">
+              <div class="meterFill" id="stabilityFill" style="width: 62%;"></div>
+            </div>
+            <div class="tinyValue" id="stabilityValue">62%</div>
+          </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="missionBoard">
+          <div class="missionTitle">MISSION BOARD</div>
+          <div class="missionItem">
+            <div class="missionName">Baseline Calibration</div>
+            <div class="missionTag" id="baselineTag">LOCKED</div>
+          </div>
+          <div class="missionItem">
+            <div class="missionName">Focus Exploration</div>
+            <div class="missionTag" id="focusTag">LOCKED</div>
+          </div>
+          <div class="missionItem">
+            <div class="missionName">Cognitive Audit</div>
+            <div class="missionTag" id="auditTag">LOCKED</div>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="saveRow">
+            <div class="saveLabel">Last Score</div>
+            <div class="saveValue" id="lastScoreValue">—</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="cardHeader">
+          <div class="cardTitle">SYSTEM LOG</div>
+        </div>
+        <div id="terminal" class="terminal" role="log" aria-live="polite"></div>
+      </div>
+    </section>
+
+    <!-- RIGHT: Story / Quiz -->
+    <section class="rightCol">
+      <div class="card storyCard">
+        <div class="cardHeader">
+          <div class="cardTitle">SIMULATION FEED</div>
+          <div class="chip" id="chapterChip">ZONE I: NEURAL COMPLEX</div>
+        </div>
+
+        <div id="panel" class="panel">
+          <div class="panelArt" aria-hidden="true">
+            <div class="panelFrame"></div>
+          </div>
+          <div class="panelText">
+            <div id="panelTitle" class="panelTitle">You are connected.</div>
+            <div id="panelBody" class="panelBody">
+              The facility renders only what you attend to. Your attention is the switch.
+              Your memory is the wiring. The system is waiting for your baseline.
+            </div>
+          </div>
+        </div>
+
+        <div id="choices" class="choices"></div>
+      </div>
+
+      <div id="quizCard" class="card quizCard hidden" aria-live="polite">
+        <div class="cardHeader">
+          <div class="cardTitle" id="quizTitle">BASELINE CALIBRATION</div>
+          <div class="pill" id="quizProgress">0 / 0</div>
+        </div>
+
+        <div class="quizBody">
+          <div class="quizQ" id="quizQuestion">Question text…</div>
+          <div class="quizOptions" id="quizOptions"></div>
+
+          <div class="quizFooter">
+            <button id="quizBackBtn" class="btn ghost hidden">Back</button>
+            <button id="quizNextBtn" class="btn primary" disabled>Confirm</button>
+          </div>
+
+          <div class="hintRow">
+            <span class="hintLabel">Hint:</span>
+            <span id="hintText" class="hintText">System hints appear when instability rises.</span>
+          </div>
+        </div>
+      </div>
+
+      <div id="resultsCard" class="card hidden">
+        <div class="cardHeader">
+          <div class="cardTitle">RESULTS</div>
+          <div class="pill" id="resultsPercent">—%</div>
+        </div>
+        <div class="resultsBody">
+          <div class="resultsBig" id="resultsBig">Score pending…</div>
+          <div class="resultsSmall" id="resultsSmall">Concept breakdown will appear here.</div>
+          <div id="breakdown" class="breakdown"></div>
+
+          <div class="resultsBtns">
+            <button id="resultsContinueBtn" class="btn primary">Continue</button>
+            <button id="resultsHomeBtn" class="btn ghost">Back to Home</button>
+          </div>
+        </div>
+      </div>
+
+    </section>
+  </main>
+
+  <footer class="footer">
+    <span>MNEMOSYNTH • built for PSY study (Ch. 3 + 8.2)</span>
+  </footer>
+
+   <script src="./app.js?v=1"></script> 
+</body>
+</html>
+
